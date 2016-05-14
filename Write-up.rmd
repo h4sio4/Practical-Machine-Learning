@@ -1,0 +1,100 @@
+---
+title: "Predicting The Manner of Weight-Lifting Exercise Using Quantified Self Devices"
+author: "Zecharias Chee"
+date: "14 May 2016"
+output: html_document
+---
+  
+#Executive Summary
+In this report, a random forest model is built to predict the manner in which a group of 6 people perform their barbell-lifts based on the weight-lifting data from [Groupware](http://groupware.les.inf.puc-rio.br/har). The training data was partitioned into (60%) training set and (40%) cross-validation set. The training set was used to build the random forest model and the cross-validation set was used to evaluate the model performance and estimate the out-of-sample error. The model was then applied to the testing data once to get the final results.
+
+#Preprocessing
+
+The following code block will reading the data from local workspace (assuming that the files are downloaded and reside in the working directory).
+
+```{r}
+#Exploratory Analysis shows that some values are #DIV/0, this should be treated as missing values.
+training <- read.csv("pml-training.csv", na.strings=c("NA", "#DIV/0!"))
+testing <- read.csv("pml-testing.csv", na.strings=c("NA", "#DIV/0!"))
+```
+
+Next, we partition the training data into training set (which is used to train the model) and CV set (which is used to estimate out-of-sample error).
+
+```{r}
+dim(training)
+
+str(training)
+
+library(caret)
+
+# Partition into training set 60% + CV set 40%
+set.seed(12345)
+inTrain <- createDataPartition(y=training$classe, p=0.6, list=FALSE)
+myTrain <- training[inTrain,]
+myCV <- training[-inTrain,]
+
+dim(myTrain)
+dim(myCV)
+summary(myTrain)
+```
+
+Notice that there are a few variables with just one unique value, all NAs, or very imbalanced. These variables will have insignificant predictive power and we would remove such zero covariates by doing the following.
+
+```{r}
+nzv <- nearZeroVar(myTrain)
+myTrain <- myTrain[, -nzv]
+```
+
+Furthermore, the first variable (id) should be omitted from the model because it doesn't mean anything.
+
+```{r}
+myTrain <- myTrain[, -1]
+```
+
+Some variables have high counts of NA's (`r 11529/11776`%) and therefore should be removed.
+
+```{r}
+dim(myTrain)
+summary(myTrain)
+
+#Get the variables without NAs
+myTrain <- myTrain[,apply(myTrain, 2, function(x) !any(is.na(x)))]
+
+dim(myTrain)
+```
+
+Now we are ready to train the random forest. This can be done simply in caret with the *train* function:
+  
+  ```{r}
+set.seed(12345)
+control <- trainControl(method="cv", number=5)
+modFit <- train(classe ~ ., data=myTrain, method="rf", trControl=control)
+pred <- predict(modFit, newdata=myCV)
+
+#Confusion Matrix
+confusionMatrix(pred, myCV$classe)
+```
+
+Thus, we estimated an out-of-sample error of
+
+```{r}
+confusionMatrix(pred, myCV$classe)$overall[1]
+```
+
+Finally, we predict on the testing data and write the answers to text files for submission.
+
+```{r}
+answers <- predict(modFit, testing)
+
+answers
+
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(answers)
+```
